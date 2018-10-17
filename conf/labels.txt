@@ -1,0 +1,4 @@
+MT 314 314 PRIMER_F link_color=green
+MT 16411 16411 PRIMER_R link_color=green
+MT 407 407 OH link_color=grey,color=grey,text_color=grey
+MT 5747 5747 OL link_color=grey,color=grey,text_color=grey

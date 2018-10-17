@@ -1,0 +1,5 @@
+[[annotation]]
+file="/Users/mattparker/PycharmProjects/mMinION/reference/mitomap.vcf.gz"
+fields = ["VARCOUNT", "VARFREQ", "LFREQ", "MFREQ", "NFREQ", "VALUE", "ANCESTRAL"]
+ops=["self", "self", "self", "self", "self", "self", "self"]
+names=["VARCOUNT", "VARFREQ", "LFREQ", "MFREQ", "NFREQ", "VALUE", "ANCESTRAL"]

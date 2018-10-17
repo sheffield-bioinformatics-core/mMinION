@@ -1,0 +1,16 @@
+{
+  "software": {
+    "minimap2": "/Users/mattparker/PycharmProjects/minimap2-2.13/minimap2",
+    "samtools": "samtools",
+    "nanosv": "nanosv",
+    "circos": "/Users/mattparker/PycharmProjects/circos-0.69-6/bin/circos",
+    "canu": "/Users/mattparker/PycharmProjects/canu-1.7.1/Darwin-amd64/bin/canu",
+    "vcfanno":"/Users/mattparker/Downloads/vcfanno_osx"
+  },
+  "reference": {
+    "genome": "/Users/mattparker/Documents/Projects/Wood/DATA/GENOME/mito.fasta",
+    "bed": "/Users/mattparker/Documents/Projects/Wood/DATA/GENOME/mt.bed",
+    "mitomap": "/Users/mattparker/PycharmProjects/reference/mitomap_20181017.vcf",
+    "vcfanno": "/Users/mattparker/PycharmProjects/vcfanno_conf.toml"
+  }
+}

@@ -1,0 +1,11 @@
+##fileformat=VCFv4.2
+##contig=<ID=NC_012920.1,length=16569>
+##INFO=<ID=VARCOUNT,Number=1,Type=Integer,Description="Overall Variant Count in Sequence Set">
+##INFO=<ID=VARFREQ,Number=1,Type=Float,Description="Overall Variant Frequency in Sequence Set">
+##INFO=<ID=LFREQ,Number=1,Type=Float,Description="Frequency in Lineage L">
+##INFO=<ID=MFREQ,Number=1,Type=Float,Description="Frequency in Lineage M">
+##INFO=<ID=NFREQ,Number=1,Type=Float,Description="Frequency in Lineage N">
+##INFO=<ID=VALUE,Number=0,Type=String,Description="Variant Value">
+##INFO=<ID=ANCESTRAL,Number=0,Type=String,Description="Ancestral Variant ('RSRS50')">
+#CHROM  POS ID  REF ALT QUAL    FILTER  INFO
+
