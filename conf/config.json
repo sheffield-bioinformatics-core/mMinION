@@ -3,14 +3,21 @@
     "minimap2": "/Users/mattparker/PycharmProjects/minimap2-2.13/minimap2",
     "samtools": "samtools",
     "nanosv": "nanosv",
+    "sniffles_image": "sniffles",
+    "sniffles_path": "/Sniffles-master/bin/sniffles-core-1.0.10/sniffles",
     "circos": "/Users/mattparker/PycharmProjects/circos-0.69-6/bin/circos",
     "canu": "/Users/mattparker/PycharmProjects/canu-1.7.1/Darwin-amd64/bin/canu",
-    "vcfanno":"/Users/mattparker/Downloads/vcfanno_osx"
+    "vcfanno":"/Users/mattparker/Downloads/vcfanno_osx",
+    "varscan":"/Users/mattparker/Downloads/VarScan.v2.3.9.jar",
+    "bgzip":"bgzip",
+    "tabix":"tabix",
+    "bcftools": "bcftools",
+    "porechop": "porechop"
   },
   "reference": {
     "genome": "/Users/mattparker/Documents/Projects/Wood/DATA/GENOME/mito.fasta",
     "bed": "/Users/mattparker/Documents/Projects/Wood/DATA/GENOME/mt.bed",
-    "mitomap": "/Users/mattparker/PycharmProjects/reference/mitomap_20181017.vcf",
-    "vcfanno": "/Users/mattparker/PycharmProjects/vcfanno_conf.toml"
+    "mitomap": "/Users/mattparker/PycharmProjects/mMinion/reference/mitomap_20181017.vcf",
+    "vcfanno": "/Users/mattparker/PycharmProjects/mMinION/conf/vcfanno_conf.toml"
   }
 }

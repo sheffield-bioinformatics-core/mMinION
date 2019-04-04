@@ -1,63 +1,13 @@
 from sqlalchemy.ext.declarative import declarative_base
-import datetime
-import subprocess
 import vcf
-from types import FunctionType
 import logging
 import json
 import argparse
-import numpy
-import pandas
-from scipy.stats import binned_statistic
+from lib.common import Common
+import os
+from lib.common import MetaClass
 
-with open('/Users/mattparker/PycharmProjects/mMinION/conf/config.json') as json_data_file:
-    config = json.load(json_data_file)
-
-def decorator(f,):
-    """
-    decorates functions with a logger so that this process is automated
-    :param f: function
-    :return: wrapper
-    """
-    def wrapper(self, *args, **kwargs):
-        self.logger.info("Running '{0}' with args: '{1}'".format(f.__name__.upper(),args))
-        start = datetime.datetime.now()
-        try:
-            result = f(self, *args, **kwargs)
-            end =datetime.datetime.now()
-            duration = end - start
-            self.logger.info("Finnished '{0}' in {1}".format(f.__name__.upper(),str(duration)))
-            return result
-        except Exception as e:
-            self.logger.warning("ERROR in {0}: {1}".format(f.__name__,e))
-            exit()
-
-
-    return wrapper
-
-
-class MetaClass(type):
-    def __new__(meta, classname, bases, classDict):
-        """
-        decorates all functions in the class with the decorator defined above
-
-        :param classname:
-        :param bases:
-        :param classDict:
-        :return:
-        """
-        newClassDict = {}
-        for attributeName, attribute in classDict.items():
-                if isinstance(attribute, FunctionType):
-                    if attributeName != "__init__" and attributeName != "run_command":
-                        # replace it with a wrapped version
-                        print attributeName
-                        attribute = decorator(attribute)
-                newClassDict[attributeName] = attribute
-        return type.__new__(meta, classname, bases, newClassDict)
-
-
-class mMinION():
+class mMinION(Common):
     __metaclass__ = MetaClass
     base = declarative_base()
 
@@ -66,6 +16,9 @@ class mMinION():
         self.samplename = samplename
         self.fastq = fastq
         self.sangerresults = sangerresults
+        with open('/Users/mattparker/PycharmProjects/mMinION/conf/config.json') as json_data_file:
+            self.config = json.load(json_data_file)
+
         # set up logger
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
@@ -80,100 +33,71 @@ class mMinION():
         self.logger.addHandler(handler)
         self.logger.addHandler(console)
 
-    def run_command(self, cmd):
-        self.logger.info("Command: " + cmd)
-        ##todo chnage to popen
-        try:
-            result = subprocess.call(cmd, shell=True)
-            if result != 0:
-                exit(result)
-        except subprocess.CalledProcessError as e:
-            print('Error executing command: ' + str(e.returncode))
-            exit(1)
 
-    def correction_trimming(self):
+    def correction_trimming(self,corrected_error_rate,min_read_length):
 
         #correct reads
-        command = [config["software"]["canu"],"-correct","-p",self.samplename,"-d",self.output,"genomeSize=16.5k overlapper=mhap utgReAlign=true","-nanopore-raw",self.fastq]
+        command = [self.config["software"]["canu"],"-correct","-p",self.samplename,"-d",self.output,"genomeSize=16.5k overlapper=mhap utgReAlign=true stopOnReadQuality=false -nanopore-raw",self.fastq]
         self.run_command(" ".join(command))
 
         #trim reads
         corrected = self.output + "/" + self.samplename + ".correctedReads.fasta.gz"
-        command = [config["software"]["canu"], "-trim","-p",self.samplename,"-d",self.output,"genomeSize=16.5k overlapper=mhap utgReAlign=true","-nanopore-corrected",corrected]
+        command = [self.config["software"]["canu"], "-trim","-p",self.samplename,"-d",self.output,"genomeSize=16.5k overlapper=mhap utgReAlign=true stopOnReadQuality=false -nanopore-corrected",corrected]
         self.run_command(" ".join(command))
 
         trimmed = self.output + "/" + self.samplename + ".trimmedReads.fasta.gz"
         return trimmed
+
+    def trim_adapters(self,fastqs):
+        out_files = []
+        fastq = fastqs.split(",")
+        for i in fastq:
+            output = self.output + "/" + os.path.basename(i).replace("fastq","trimmed.fastq.gz")
+            out_files.append(output)
+            command = [self.config["software"]["porechop"], "-i", i, "-o",output]
+            self.run_command(" ".join(command))
+        return out_files
+
 
     def mapping(self,fastq):
 
         rg = r'"@RG\tID:'+self.samplename+r'\tSM:mMinION"'
 
         outfile = self.output + "/" + self.samplename + ".sorted.bam"
-        print config["software"]
-        command = [config["software"]["minimap2"], "-a", '-R',rg, config["reference"]["genome"], fastq,"|",config["software"]["samtools"],"sort","-","|",config["software"]["samtools"],"view","-bh","-",">",outfile]
+        print self.config["software"]
+        command = [self.config["software"]["minimap2"], "--MD -ax map-ont", '-R',rg, self.config["reference"]["genome"], fastq,"|",self.config["software"]["samtools"],"sort","-","|",self.config["software"]["samtools"],"view","-bh","-",">",outfile]
         self.run_command(" ".join(command))
 
-        command = [config["software"]["samtools"],"index",outfile]
+        command = [self.config["software"]["samtools"],"index",outfile]
         self.run_command(" ".join(command))
 
         return outfile
 
-    def coverage(self,bam):
-        """
-        this uses samtools, sambamba fails ti deal with gapped reads very well
-        """
-        outfile = self.output + "/" + self.samplename + ".sorted.bam.depth"
-        command = [config["software"]["samtools"],"depth","-a", "-Q 20",bam,">",outfile]
+    def filter(self,bam):
+        #samtools view -h N4.trimmed.sorted.bam | awk 'length($10) > 1000 || $1 ~ /^@/' | samtools view -bS > N4.trimmed.sorted.filtered.bam
+
+        outfile = self.output + "/" + self.samplename + ".trimed.sorted.filtered.bam"
+        command = [self.config["software"]["samtools"],"view","-h",bam,"| awk 'length($10) > 200 || $1 ~ /^@/' |",self.config["software"]["samtools"],"view -bS >",outfile]
         self.run_command(" ".join(command))
 
-
+        command = [self.config["software"]["samtools"], "index", outfile]
+        self.run_command(" ".join(command))
 
         return outfile
-
-    def transform_coverage(self,depth):
-        out = []
-        position = []
-        coverage = []
-        with open(depth,"rb") as f:
-            for line in f:
-
-                chrom,pos,cov = line.rstrip().split("\t")
-                position.append(int(pos))
-                coverage.append(int(cov))
-                new_line = [chrom,str(pos),str(pos),str(cov)]
-                out.append("\t".join(new_line))
-
-
-        df = pandas.DataFrame({'position':position,'coverage':coverage})
-        print coverage
-
-        self.max_coverage = max(coverage)+100
-        print binned_statistic(coverage, coverage, statistic='mean', bins=1650, range=None)
-
-
-
-        circos_file = self.output + "/" + self.samplename + ".sorted.bam.depth.circos"
-        circos_out = open(circos_file,"w")
-
-        circos_out.write("\n".join(out))
-        circos_out.close()
-
-        return circos_file
 
     def sv(self,bam):
 
         #run nanosv
 
         outfile = self.output + "/" + self.samplename + ".sorted.bam.vcf"
-        command = [config["software"]["nanosv"],"-o",outfile,"-s",config["software"]["samtools"],"-b",config["reference"]["bed"],"-t","6",bam]
+        command = [self.config["software"]["nanosv"],"-o",outfile,"-s",self.config["software"]["samtools"],"-b",self.config["reference"]["bed"],"-t","6",bam]
         self.run_command(" ".join(command))
 
         #filter calls which overlap the uncovered region around 0kb
 
         return outfile
 
-    def transform_sv(self,sv):
+    def transform_sv(self, sv):
         vcf_reader = vcf.Reader(open(sv, 'r'))
         out = []
         for record in vcf_reader:
@@ -183,16 +107,17 @@ class mMinION():
 
             if str(record.ALT[0]) == "<INS>":
                 print record.INFO["END"]
-                alt=str(int(record.POS)+int(record.INFO["END"]))
+                alt = str(int(record.POS) + int(record.INFO["END"]))
             else:
                 alt = str(''.join(i for i in str(record.ALT[0]) if i.isdigit()))
             if record.QUAL < 200:
-                color="lgrey"
+                color = "lgrey"
             else:
-                color="red"
+                color = "red"
             if "LowQual" in record.FILTER:
-                color="vvlgrey"
-            line = [record.CHROM,str(record.POS),str(record.POS),record.CHROM,alt,alt,"color="+color+",thickness=5p"]
+                color = "vvlgrey"
+            line = [record.CHROM, str(record.POS), str(record.POS), record.CHROM, alt, alt,
+                    "color=" + color + ",thickness=5p"]
             out.append("\t".join(line))
 
         links_file = self.output + "/" + self.samplename + ".sorted.bam.sv.circos"
@@ -202,6 +127,73 @@ class mMinION():
         circos_out.close()
 
         return links_file
+
+    def sniffles_sv(self,bam):
+
+        outfile = self.samplename + ".sorted.bam.sniffles.vcf"
+        bam_path = os.path.dirname(bam)
+        bam = os.path.basename(bam)
+
+        self.docker_command(image=self.config["software"]["sniffles_image"],executable=self.config["software"]["sniffles_path"],data_dir=bam_path,output_dir=self.output,arguments="-q 30 --allelefreq 0.01 -v /output/"+outfile+" -m /data/"+bam)
+
+        return self.output + "/" + self.samplename + ".sorted.bam.sniffles.vcf"
+
+    def transform_sniffles_sv(self, sv):
+        vcf_reader = vcf.Reader(open(sv, 'r'))
+        red_out = []
+        grey_out = []
+        for record in vcf_reader:
+
+            if str(record.ALT[0]) == '<DEL>':
+
+                if "IMPRECISE" in record.INFO:
+                    if record.INFO["IMPRECISE"] == True:
+                        color = "vvlgrey"
+
+                if "PRECISE" in record.INFO:
+                    if record.INFO["PRECISE"] == True:
+                        color = "red"
+
+                alt = str(record.INFO["END"])
+                # print record.FORMAT
+                # #reference reads
+                # reference_reads = record.samples[0]["DR"]
+                # #variant reads
+                # variant_reads = record.samples[0]["DV"]
+                # total_reads = reference_reads+variant_reads
+                #
+                #
+                # print record.samples[0]["GT"]
+                #
+                # if reference_reads == 0:
+                #     color="vvlgrey"
+                # else:
+                #     color = "red"
+                # print total_reads
+                # print self.median_coverage
+                # print (total_reads / float(self.median_coverage))
+                # if (total_reads / float(self.median_coverage)) < 0.1:
+                #     print "low_cov"
+                #     color="vvlgrey"
+                #
+                line = [record.CHROM, str(record.POS), str(record.POS), record.CHROM, alt, alt,
+                        "color=" + color + ",thickness=5p"]
+                if color == "vvlgrey":
+                    grey_out.append("\t".join(line))
+                elif color == "red":
+                    red_out.append("\t".join(line))
+
+        links_file = self.output + "/" + self.samplename + ".sorted.bam.sv.circos"
+        circos_out = open(links_file, "w")
+
+        circos_out.write("\n".join(grey_out))
+        circos_out.write("\n")
+        circos_out.write("\n".join(red_out))
+        circos_out.write("\n")
+        circos_out.close()
+
+        return links_file
+
 
 
     def parse_sanger_svs(self):
@@ -226,28 +218,30 @@ class mMinION():
         sanger_out.close
         return sanger_file
 
-    def mpileup(self,bam):
-        outfile = self.output + "/" + self.samplename + ".mpileup"
-        command = [config["software"]["samtools"], "mpileup", bam, ">", outfile]
-        self.run_command(" ".join(command))
-
-        return outfile
-
 
     def call_variants(self,mpileup):
-        snp_outfile = self.output + "/" + self.samplename + ".snp.vcf"
-        command = ["java","-jar",config["software"]["varscan"],"mpileup2snp","mpileup --output-vcf 1 --strand-filter 0",">",snp_outfile]
+        snp_outfile = mpileup + ".snp.vcf"
+        command = ["java","-jar",self.config["software"]["varscan"],"mpileup2snp",mpileup," --min-var-freq 0.01 --output-vcf 1 --strand-filter 0",">",snp_outfile]
         self.run_command(" ".join(command))
 
         #do indels not follow VCF spec? process them so they do
-        indel_outfile = self.output + "/" + self.samplename + ".indel.vcf"
-        command = ["java", "-jar", config["software"]["varscan"], "mpileup2indel",
-                   "mpileup --output-vcf 1 --strand-filter 0", ">", indel_outfile]
+        indel_outfile = mpileup + ".indel.vcf"
+        command = ["java", "-jar", self.config["software"]["varscan"], "mpileup2indel",
+                   mpileup," --output-vcf 1 --strand-filter 0", ">", indel_outfile]
         self.run_command(" ".join(command))
 
+        bgzip_snps = self.bgzip_tabix(snp_outfile)
+        bgzip_indels = self.bgzip_tabix(indel_outfile)
+
+        combined = mpileup + ".snp.indel.vcf"
+        command = [self.config["software"]["bcftools"],"merge","--force-samples",bgzip_snps,bgzip_indels,">",combined]
+        self.run_command(" ".join(command))
+
+        return combined
+
     def annotate_variants(self,vcf):
-        outfile = self.output + "/" + self.samplename + ".annotated.vcf"
-        command = [config["software"]["vcfanno"],config["reference"]["vcfanno"],vcf,">",outfile]
+        outfile = self.output + "/" + self.samplename + ".sorted.bam.mpileup.snp.indel.annotated.vcf"
+        command = [self.config["software"]["vcfanno"],self.config["reference"]["vcfanno"],vcf,">",outfile]
         self.run_command(" ".join(command))
 
         return outfile
@@ -276,13 +270,6 @@ class mMinION():
         return conf_file
 
 
-    def circos(self,conf):
-
-        circos_file = self.samplename+".circos"
-        command = [config["software"]["circos"], "-conf", conf,"-outputdir",self.output,"-outputfile",circos_file,"-debug_group text"]
-        self.run_command(" ".join(command))
-
-
 
 
 def main():
@@ -290,47 +277,64 @@ def main():
     parser = argparse.ArgumentParser(description='mMinION - Run fastq file for a sample through mitochondraial analysis pipeline')
     parser.add_argument('--samplename',help='The name of the sample being processed - files will take this name')
     parser.add_argument('--fastq',help='Full path to the Fastq file')
+    parser.add_argument('--trimmed_fastq', help='Full path to the Fastq file')
     parser.add_argument('--outdir',help='The output directory for all files generated')
     parser.add_argument('--bam',help='Provide bam file to skip mapping')
     parser.add_argument('--coverage',help='Provide samtools depth output to skip this step')
     parser.add_argument('--sv',help='Provide SV calls to skip SV calling')
+    parser.add_argument('--variants', help='Provide SNV/INDEL calls to skip calling')
+    parser.add_argument('--correctedErrorRate')
+    parser.add_argument('--minReadLength')
     parser.add_argument('--sangerresults')
 
     parser.add_argument('--correction', action='store_true', help='Turn on read correction & trimming with canu. WARNING! This is computationally intensive')
 
     args = parser.parse_args()
 
+    if not os.path.exists(args.outdir):
+        os.makedirs(args.outdir)
 
 
     m = mMinION(args.samplename,args.fastq,args.outdir,args.sangerresults)
     if args.bam:
-        bam = args.bam
+        bam = m.filter(args.bam)
     else:
         if args.correction:
-            trimmed_fastq = m.correction_trimming()
+            trimmed_fastq = m.correction_trimming(corrected_error_rate=args.correctedErrorRate,min_read_length=args.minReadLength)
             bam = m.mapping(trimmed_fastq)
         else:
-            bam = m.mapping(args.fastq)
+            if args.trimmed_fastq:
+                trimmed_fastq = args.trimmed_fastq.split(",")
+            else:
+                trimmed_fastq = m.trim_adapters(args.fastq)
+            fastq = " ".join(trimmed_fastq)
+            temp_bam = m.mapping(fastq)
+            bam = m.filter(temp_bam)
+
 
     if args.coverage:
         coverage = args.coverage
     else:
         coverage = m.coverage(bam)
 
-    #coverage = "/Users/mattparker/Documents/Projects/Wood/DATA/MINION/PORETOOLS_FASTQ/test/test.sorted.bam.depth"
+
     circos_coverage = m.transform_coverage(coverage)
-    # sv = m.sv(bam)
 
     if args.sv:
         sv = args.sv
     else:
-        sv = sv = m.sv(bam)
+        sv = m.sv(bam)
+
+    if args.variants:
+        variants = args.variants
+    else:
+        pileup = m.mpileup(bam)
+        raw_variants = m.call_variants(pileup)
+        variants = m.annotate_variants(raw_variants)
 
 
-    #sv = "/Users/mattparker/Documents/Projects/Wood/DATA/MINION/PORETOOLS_FASTQ/test/test.sorted.bam.vcf"
 
-
-    links = m.transform_sv(sv)
+    links = m.transform_sniffles_sv(sv)
     sanger = m.parse_sanger_svs()
 
     circos_conf = m.prepare_ciros(links, circos_coverage,sanger)
